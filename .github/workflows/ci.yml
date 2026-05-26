@@ -64,6 +64,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all
 
+      - name: Build release binary
+        if: matrix.os == 'windows-latest'
+        run: cargo build --release
+
+      - name: Upload release binary
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rtk-windows
+          path: target/release/rtk.exe
+
   security:
     name: Security Scan
     needs: clippy
