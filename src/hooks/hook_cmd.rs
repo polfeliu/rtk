@@ -7,7 +7,7 @@ use super::constants::PRE_TOOL_USE_KEY;
 use super::permissions::{self, PermissionVerdict};
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, Read, Write};
 
 use crate::discover::registry::{has_heredoc, rewrite_command};
 
@@ -15,8 +15,29 @@ const STDIN_CAP: usize = 1_048_576; // 1 MiB
 
 fn read_stdin_limited() -> Result<String> {
     let mut input = String::new();
+    // Try reading a single line first.  VS Code (and some other hook hosts)
+    // keep stdin open after writing the JSON payload; `read_to_string` would
+    // block until the pipe is closed (= timeout).  If the first line contains
+    // a complete JSON object we can return it immediately.  If stdin is a
+    // normal pipe that closes after writing, `read_line` returns at EOF just
+    // like `read_to_string` would for a single-line payload.
+    let bytes = io::stdin()
+        .lock()
+        .read_line(&mut input)
+        .context("Failed to read stdin")?;
+    if bytes == 0 {
+        return Ok(input);
+    }
+    // If the line looks like complete JSON, return it immediately without
+    // waiting for EOF.  This is the common case for hook hosts that keep
+    // stdin open.
+    let trimmed = input.trim();
+    if trimmed.starts_with('{') && trimmed.ends_with('}') {
+        return Ok(input);
+    }
+    // Fallback: multi-line / non-JSON input — read the rest up to the cap.
     io::stdin()
-        .take((STDIN_CAP + 1) as u64)
+        .take((STDIN_CAP + 1 - input.len()) as u64)
         .read_to_string(&mut input)
         .context("Failed to read stdin")?;
     if input.len() > STDIN_CAP {
