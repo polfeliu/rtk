@@ -65,7 +65,7 @@ pub fn run_copilot() -> Result<()> {
 fn detect_format(v: &Value) -> HookFormat {
     // VS Code Copilot Chat / Claude Code: snake_case keys
     if let Some(tool_name) = v.get("tool_name").and_then(|t| t.as_str()) {
-        if matches!(tool_name, "runTerminalCommand" | "Bash" | "bash") {
+        if matches!(tool_name, "runTerminalCommand" | "run_in_terminal" | "Bash" | "bash") {
             if let Some(cmd) = v
                 .pointer("/tool_input/command")
                 .and_then(|c| c.as_str())
@@ -132,23 +132,38 @@ fn handle_vscode(cmd: &str) -> Result<()> {
         None => return Ok(()),
     };
 
-    // Allow (explicit rule matched): auto-allow the rewritten command.
-    // Ask/Default (no allow rule matched): rewrite but let the host tool prompt.
-    let decision = match verdict {
-        PermissionVerdict::Allow => "allow",
-        _ => "ask",
-    };
-
     audit_log("rewrite", cmd, &rewritten);
 
-    let output = json!({
-        "hookSpecificOutput": {
-            "hookEventName": PRE_TOOL_USE_KEY,
-            "permissionDecision": decision,
-            "permissionDecisionReason": "RTK auto-rewrite",
-            "updatedInput": { "command": rewritten }
-        }
+    let copilot_perm = crate::core::config::Config::load()
+        .map(|c| c.hooks.copilot_permission)
+        .unwrap_or_default();
+
+    let mut hook_output = json!({
+        "hookEventName": PRE_TOOL_USE_KEY,
+        "permissionDecisionReason": "RTK auto-rewrite",
+        "updatedInput": { "command": rewritten }
     });
+
+    // Determine permissionDecision based on verdict and config:
+    // - Explicit allow rule always emits "allow"
+    // - Otherwise, respect copilot_permission config (default: omit)
+    let decision = match verdict {
+        PermissionVerdict::Allow => Some("allow"),
+        _ => match copilot_perm {
+            crate::core::config::CopilotPermission::Allow => Some("allow"),
+            crate::core::config::CopilotPermission::Ask => Some("ask"),
+            crate::core::config::CopilotPermission::Omit => None,
+        },
+    };
+
+    if let Some(d) = decision {
+        hook_output
+            .as_object_mut()
+            .unwrap()
+            .insert("permissionDecision".into(), json!(d));
+    }
+
+    let output = json!({ "hookSpecificOutput": hook_output });
     let _ = writeln!(io::stdout(), "{output}");
     Ok(())
 }
@@ -523,6 +538,55 @@ fn run_cursor_inner_with_rules(
     }
 }
 
+/// Test-only version of handle_vscode that accepts copilot_permission config
+/// and permission rules as parameters instead of reading from disk/env.
+#[cfg(test)]
+fn run_copilot_vscode_inner(
+    input: &str,
+    copilot_perm: crate::core::config::CopilotPermission,
+    deny_rules: &[String],
+    ask_rules: &[String],
+    allow_rules: &[String],
+) -> Option<String> {
+    let v: Value = serde_json::from_str(input).ok()?;
+
+    let cmd = v
+        .pointer("/tool_input/command")
+        .and_then(|c| c.as_str())
+        .filter(|c| !c.is_empty())?;
+
+    let verdict = permissions::check_command_with_rules(cmd, deny_rules, ask_rules, allow_rules);
+    if verdict == PermissionVerdict::Deny {
+        return None;
+    }
+
+    let rewritten = get_rewritten(cmd)?;
+
+    let mut hook_output = json!({
+        "hookEventName": PRE_TOOL_USE_KEY,
+        "permissionDecisionReason": "RTK auto-rewrite",
+        "updatedInput": { "command": rewritten }
+    });
+
+    let decision = match verdict {
+        PermissionVerdict::Allow => Some("allow"),
+        _ => match copilot_perm {
+            crate::core::config::CopilotPermission::Allow => Some("allow"),
+            crate::core::config::CopilotPermission::Ask => Some("ask"),
+            crate::core::config::CopilotPermission::Omit => None,
+        },
+    };
+
+    if let Some(d) = decision {
+        hook_output
+            .as_object_mut()
+            .unwrap()
+            .insert("permissionDecision".into(), json!(d));
+    }
+
+    Some(json!({ "hookSpecificOutput": hook_output }).to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -557,6 +621,14 @@ mod tests {
     fn test_detect_vscode_run_terminal_command() {
         assert!(matches!(
             detect_format(&vscode_input("runTerminalCommand", "cargo test")),
+            HookFormat::VsCode { .. }
+        ));
+    }
+
+    #[test]
+    fn test_detect_vscode_run_in_terminal() {
+        assert!(matches!(
+            detect_format(&vscode_input("run_in_terminal", "cargo test")),
             HookFormat::VsCode { .. }
         ));
     }
@@ -987,5 +1059,159 @@ mod tests {
             get_rewritten("cargo test").is_some(),
             "cargo test should be rewritable when not denied"
         );
+    }
+
+    // --- Copilot VS Code handler (handle_vscode) ---
+
+    use crate::core::config::CopilotPermission;
+
+    fn copilot_vscode_input(cmd: &str) -> String {
+        json!({
+            "tool_name": "run_in_terminal",
+            "tool_input": { "command": cmd }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn test_copilot_vscode_default_omits_permission_decision() {
+        // Default config (CopilotPermission::Omit) + no permission rules:
+        // permissionDecision should be absent from the output.
+        let result = run_copilot_vscode_inner(
+            &copilot_vscode_input("git status"),
+            CopilotPermission::Omit,
+            &[], &[], &[],
+        ).unwrap();
+        let v: Value = serde_json::from_str(&result).unwrap();
+        let hook = &v["hookSpecificOutput"];
+        assert_eq!(hook["updatedInput"]["command"], "rtk git status");
+        assert_eq!(hook["permissionDecisionReason"], "RTK auto-rewrite");
+        assert!(
+            hook.get("permissionDecision").is_none()
+                || hook["permissionDecision"].is_null(),
+            "permissionDecision should be absent when config is Omit"
+        );
+    }
+
+    #[test]
+    fn test_copilot_vscode_config_allow_sets_allow() {
+        // copilot_permission = "allow" in config:
+        // permissionDecision should be "allow".
+        let result = run_copilot_vscode_inner(
+            &copilot_vscode_input("git status"),
+            CopilotPermission::Allow,
+            &[], &[], &[],
+        ).unwrap();
+        let v: Value = serde_json::from_str(&result).unwrap();
+        let hook = &v["hookSpecificOutput"];
+        assert_eq!(hook["permissionDecision"], "allow");
+        assert_eq!(hook["updatedInput"]["command"], "rtk git status");
+    }
+
+    #[test]
+    fn test_copilot_vscode_config_ask_sets_ask() {
+        // copilot_permission = "ask" in config (preserves old behavior):
+        // permissionDecision should be "ask".
+        let result = run_copilot_vscode_inner(
+            &copilot_vscode_input("git status"),
+            CopilotPermission::Ask,
+            &[], &[], &[],
+        ).unwrap();
+        let v: Value = serde_json::from_str(&result).unwrap();
+        let hook = &v["hookSpecificOutput"];
+        assert_eq!(hook["permissionDecision"], "ask");
+        assert_eq!(hook["updatedInput"]["command"], "rtk git status");
+    }
+
+    #[test]
+    fn test_copilot_vscode_explicit_allow_rule_overrides_config() {
+        // When an explicit allow rule matches, permissionDecision should be
+        // "allow" regardless of copilot_permission config.
+        let allow_rules = vec!["git status".to_string()];
+        for perm in [CopilotPermission::Omit, CopilotPermission::Ask] {
+            let result = run_copilot_vscode_inner(
+                &copilot_vscode_input("git status"),
+                perm.clone(),
+                &[], &[], &allow_rules,
+            ).unwrap();
+            let v: Value = serde_json::from_str(&result).unwrap();
+            assert_eq!(
+                v["hookSpecificOutput"]["permissionDecision"], "allow",
+                "Explicit allow rule should override config {:?}", perm
+            );
+        }
+    }
+
+    #[test]
+    fn test_copilot_vscode_deny_rule_blocks_rewrite() {
+        // A deny rule should cause no output (passthrough).
+        let deny_rules = vec!["git status".to_string()];
+        let result = run_copilot_vscode_inner(
+            &copilot_vscode_input("git status"),
+            CopilotPermission::Allow,
+            &deny_rules, &[], &[],
+        );
+        assert!(result.is_none(), "Deny rule should block the rewrite");
+    }
+
+    #[test]
+    fn test_copilot_vscode_passthrough_unsupported_command() {
+        // Unsupported commands (no rtk equivalent) should return None.
+        let result = run_copilot_vscode_inner(
+            &copilot_vscode_input("htop"),
+            CopilotPermission::Allow,
+            &[], &[], &[],
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_copilot_vscode_passthrough_already_rtk() {
+        let result = run_copilot_vscode_inner(
+            &copilot_vscode_input("rtk git status"),
+            CopilotPermission::Allow,
+            &[], &[], &[],
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_copilot_vscode_malformed_json() {
+        let result = run_copilot_vscode_inner(
+            "not json {{{",
+            CopilotPermission::Omit,
+            &[], &[], &[],
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_copilot_vscode_empty_command() {
+        let input = json!({
+            "tool_name": "run_in_terminal",
+            "tool_input": { "command": "" }
+        }).to_string();
+        let result = run_copilot_vscode_inner(
+            &input,
+            CopilotPermission::Allow,
+            &[], &[], &[],
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_copilot_vscode_output_structure() {
+        // Verify the full output structure matches expected format.
+        let result = run_copilot_vscode_inner(
+            &copilot_vscode_input("cargo test"),
+            CopilotPermission::Omit,
+            &[], &[], &[],
+        ).unwrap();
+        let v: Value = serde_json::from_str(&result).unwrap();
+        let hook = &v["hookSpecificOutput"];
+        assert_eq!(hook["hookEventName"], "PreToolUse");
+        assert_eq!(hook["permissionDecisionReason"], "RTK auto-rewrite");
+        assert!(hook["updatedInput"].is_object());
+        assert!(hook["updatedInput"]["command"].as_str().unwrap().starts_with("rtk "));
     }
 }

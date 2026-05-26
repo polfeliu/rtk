@@ -51,6 +51,36 @@ pub struct HooksConfig {
     /// not anything else.
     #[serde(default)]
     pub transparent_prefixes: Vec<String>,
+
+    /// Permission behavior for the Copilot VS Code hook when no explicit
+    /// allow/deny/ask rule matches. Controls the `permissionDecision` field
+    /// in the hook output.
+    ///
+    /// - `"omit"` (default): omit `permissionDecision` from output, letting
+    ///   VS Code apply the rewrite transparently without prompting.
+    /// - `"allow"`: explicitly set `permissionDecision: "allow"`.
+    /// - `"ask"`: set `permissionDecision: "ask"`, causing VS Code to prompt
+    ///   the user before applying each rewrite.
+    #[serde(default)]
+    pub copilot_permission: CopilotPermission,
+}
+
+/// Default permission behavior for the Copilot VS Code hook.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CopilotPermission {
+    /// Omit `permissionDecision` from the hook output (transparent rewrite).
+    Omit,
+    /// Explicitly set `permissionDecision: "allow"`.
+    Allow,
+    /// Set `permissionDecision: "ask"`, prompting the user.
+    Ask,
+}
+
+impl Default for CopilotPermission {
+    fn default() -> Self {
+        CopilotPermission::Omit
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -295,5 +325,52 @@ consent_date = "2026-04-10T12:00:00Z"
             config.telemetry.consent_date.as_deref(),
             Some("2026-04-10T12:00:00Z")
         );
+    }
+
+    #[test]
+    fn test_copilot_permission_default_is_omit() {
+        let config = Config::default();
+        assert_eq!(config.hooks.copilot_permission, CopilotPermission::Omit);
+    }
+
+    #[test]
+    fn test_copilot_permission_deserialize_allow() {
+        let toml = r#"
+[hooks]
+copilot_permission = "allow"
+"#;
+        let config: Config = toml::from_str(toml).expect("valid toml");
+        assert_eq!(config.hooks.copilot_permission, CopilotPermission::Allow);
+    }
+
+    #[test]
+    fn test_copilot_permission_deserialize_ask() {
+        let toml = r#"
+[hooks]
+copilot_permission = "ask"
+"#;
+        let config: Config = toml::from_str(toml).expect("valid toml");
+        assert_eq!(config.hooks.copilot_permission, CopilotPermission::Ask);
+    }
+
+    #[test]
+    fn test_copilot_permission_deserialize_omit() {
+        let toml = r#"
+[hooks]
+copilot_permission = "omit"
+"#;
+        let config: Config = toml::from_str(toml).expect("valid toml");
+        assert_eq!(config.hooks.copilot_permission, CopilotPermission::Omit);
+    }
+
+    #[test]
+    fn test_copilot_permission_missing_defaults_to_omit() {
+        // Older configs without copilot_permission should still parse.
+        let toml = r#"
+[hooks]
+exclude_commands = ["curl"]
+"#;
+        let config: Config = toml::from_str(toml).expect("valid toml");
+        assert_eq!(config.hooks.copilot_permission, CopilotPermission::Omit);
     }
 }
