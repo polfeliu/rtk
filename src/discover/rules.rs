@@ -435,6 +435,15 @@ pub const RULES: &[RtkRule] = &[
         subcmd_status: &[],
     },
     RtkRule {
+        pattern: r"^poe\s+\S+",
+        rtk_cmd: "rtk poe",
+        rewrite_prefixes: &["poe"],
+        category: "Python",
+        savings_pct: 80.0,
+        subcmd_savings: &[],
+        subcmd_status: &[],
+    },
+    RtkRule {
         pattern: r"^ruff\s+(check|format)",
         rtk_cmd: "rtk ruff",
         rewrite_prefixes: &["ruff"],
