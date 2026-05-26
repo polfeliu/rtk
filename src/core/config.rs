@@ -66,21 +66,16 @@ pub struct HooksConfig {
 }
 
 /// Default permission behavior for the Copilot VS Code hook.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CopilotPermission {
     /// Omit `permissionDecision` from the hook output (transparent rewrite).
+    #[default]
     Omit,
     /// Explicitly set `permissionDecision: "allow"`.
     Allow,
     /// Set `permissionDecision: "ask"`, prompting the user.
     Ask,
-}
-
-impl Default for CopilotPermission {
-    fn default() -> Self {
-        CopilotPermission::Omit
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
