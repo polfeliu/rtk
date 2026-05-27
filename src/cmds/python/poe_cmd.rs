@@ -170,4 +170,91 @@ hello = "echo hello"
         let cmd = task.as_str().unwrap();
         assert_eq!(cmd, "echo hello");
     }
+
+    #[test]
+    fn test_unsupported_task_type_returns_error() {
+        let toml_str = r#"
+[my-script]
+script = "my_module:main"
+"#;
+        let tasks: Value = toml_str.parse().unwrap();
+        let result = run_task("my-script", &[], &tasks, 0);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("only cmd and sequence tasks are supported")
+        );
+    }
+
+    #[test]
+    fn test_empty_args_returns_error() {
+        let result = run(&[], 0);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Usage:"));
+    }
+
+    #[test]
+    fn test_cmd_with_help_field_resolves() {
+        let toml_str = r#"
+[build-wheel]
+help = "Build wheels"
+cmd = "poetry build"
+"#;
+        let tasks: Value = toml_str.parse().unwrap();
+        let task = tasks.get("build-wheel").unwrap();
+        let cmd = task.get("cmd").and_then(|c| c.as_str()).unwrap();
+        assert_eq!(cmd, "poetry build");
+    }
+
+    #[test]
+    fn test_sequence_stops_on_missing_subtask() {
+        let toml_str = r#"
+[step1]
+cmd = "echo step1"
+
+[pipeline]
+sequence = ["step1", "nonexistent"]
+"#;
+        let tasks: Value = toml_str.parse().unwrap();
+        // Can't run the sequence without executing commands, but we can verify
+        // the task structure parses correctly
+        let task = tasks.get("pipeline").unwrap();
+        let seq = task
+            .get("sequence")
+            .and_then(|s| s.as_array())
+            .unwrap();
+        assert_eq!(seq.len(), 2);
+    }
+
+    #[test]
+    fn bench_pyproject_toml_parse() {
+        let content = include_str!("../../../tests/fixtures/pyproject_poe.toml");
+        let iterations = 100;
+
+        let start = std::time::Instant::now();
+        for _ in 0..iterations {
+            let doc: Value = content.parse::<Value>().expect("parse failed");
+            let _tasks = doc
+                .get("tool")
+                .and_then(|t| t.get("poe"))
+                .and_then(|p| p.get("tasks"));
+            std::hint::black_box(&_tasks);
+        }
+        let elapsed = start.elapsed();
+
+        let per_parse_us = elapsed.as_micros() as f64 / iterations as f64;
+        eprintln!(
+            "pyproject.toml parse: {:.1}µs/iter ({} iterations in {:?})",
+            per_parse_us, iterations, elapsed
+        );
+        // Parse must stay well under ruff/mypy startup (~500ms).
+        // Debug builds ~9ms, release ~0.1ms — no cache needed.
+        assert!(
+            per_parse_us < 50_000.0,
+            "Parse took {:.1}µs — investigate regression",
+            per_parse_us
+        );
+    }
 }

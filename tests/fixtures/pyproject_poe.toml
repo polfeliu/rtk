@@ -1,0 +1,196 @@
+[project]
+dynamic = ["version"]
+
+name = "ingenialink"
+description = "IngeniaLink Communications Library"
+authors = [
+  { name = "Novanta", email = "support@ingeniamc.com" }
+]
+readme = { file = "README.rst", content-type = "text/x-rst" }
+
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Cython",
+  "Topic :: Communications",
+  "Topic :: Software Development :: Libraries"
+]
+
+requires-python = ">=3.9"
+dependencies = [
+    "canopen==2.2.0",
+    "python-can==4.4.2",
+    "ingenialogger>=0.2.1",
+    "ping3==5.1.5",
+    "pysoem>=1.1.13, <1.2.0",
+    "bitarray==3.8.0",
+    "multiping==1.1.2",
+    "numpy>=1.26.0",
+]
+
+[project.urls]
+Homepage = "https://www.ingeniamc.com"
+Documentation = "https://distext.ingeniamc.com/doc/ingenialink-python/latest/"
+Source = "https://github.com/ingeniamc/ingenialink-python"
+
+[tool.poetry]
+version = "7.6.1"  # base version
+
+[[tool.poetry.source]]
+name = "PyPI"
+priority = "primary"
+
+[[tool.poetry.source]]
+name = "novanta"
+url = "http://pypi.novanta.com/simple"
+priority = "supplemental"
+
+
+[build-system]
+requires = [
+  "setuptools==75.6.0", 
+  "setuptools_scm[toml]>=8", 
+  "wheel==0.42.0", 
+  "Cython==3.0.11",
+  "setuptools_scm_policies @ http://pypi.novanta.com/packages/setuptools_scm_policies-0.2.0-py3-none-any.whl"
+]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+version_scheme = "nm_version_scheme"
+local_scheme = "nm_local_scheme"
+write_to = "ingenialink/_version.py"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["ingenialink"]
+
+[tool.setuptools.package-data]
+ingenialink = ["py.typed", "*.pyd"]
+
+# Dependencies to run poe tasks
+[tool.poetry.group.dev]
+optional = true
+[tool.poetry.group.dev.dependencies]
+poethepoet = {extras = ["poetry-plugin"], version = "^0.35.0"}
+Cython  = "==3.2.4"
+
+# Dependencies for build wheel tasks
+[tool.poetry.group.build]
+optional = true
+[tool.poetry.group.build.dependencies]
+twine = "==6.2.0"
+
+# Dependencies for format task
+[tool.poetry.group.format]
+optional = true
+[tool.poetry.group.format.dependencies]
+ruff = "==0.15.2"
+
+# Dependencies for type task
+[tool.poetry.group.type]
+optional = true
+[tool.poetry.group.type.dependencies]
+mypy = "==1.19.1"
+
+# Dependencies for docs task
+[tool.poetry.group.docs]
+optional = true
+[tool.poetry.group.docs.dependencies]
+sphinx = "==7.4.7"
+sphinx-rtd-theme = "==3.1.0"
+sphinxcontrib-bibtex = "==2.6.2"
+nbsphinx = "==0.9.8"
+m2r2 = "==0.3.4"
+jinja2 = "==3.1.6"
+
+# Dependencies for tests task
+[tool.poetry.group.tests]
+optional = true
+[tool.poetry.group.tests.dependencies]
+pytest = "==8.4.1"
+pytest-env = "==1.1.5"
+pytest-cov = "==7.1.0"
+pytest-mock = "==3.15.1"
+pytest-console-scripts = "==1.4.1"
+twisted = "==25.5.0"
+summit-testing-framework = {version = "==0.3.0.post74+develop.cfdaeac"}
+virtual_drive = {version = "==0.1.0"}
+xmlschema = ">=3.0.0"
+
+# -----------------------------------------------------------------------
+#                                   TASKS
+# -----------------------------------------------------------------------
+
+# ----------------------------- Build wheel -----------------------------
+[tool.poe.tasks.build-wheel]
+help = "Build wheels"
+cmd = "poetry build"
+
+[tool.poe.tasks.check-wheels]
+help = "Check wheels"
+cmd = "twine check dist/*"
+
+[tool.poe.tasks.build-cython]
+help = "Build Cython"
+cmd = "python setup.py build_ext --inplace"
+
+# ----------------------------- Ruff format -----------------------------
+[tool.poe.tasks.ruff-format-check]
+help = "Format check with ruff"
+cmd = "ruff format --check ingenialink tests examples"
+
+[tool.poe.tasks.ruff-check]
+help = "Check with ruff"
+cmd = "ruff check ingenialink tests examples"
+
+[tool.poe.tasks.format]
+help     = "Check format"
+sequence = ["ruff-format-check", "ruff-check"]
+
+# ----------------------------- Ruff reformat -----------------------------
+[tool.poe.tasks.ruff-format]
+help = "Format files with ruff"
+cmd = "ruff format ingenialink tests examples"
+
+[tool.poe.tasks.ruff-check-fix]
+help = "Fix lint errors"
+cmd = "ruff check --fix ingenialink tests examples"
+
+[tool.poe.tasks.reformat]
+help     = "Reformat files and fix lint errors"
+sequence = ["ruff-format", "ruff-check-fix"]
+
+# ----------------------------- Mypy -----------------------------
+[tool.poe.tasks.type]
+help = "Run type checks"
+cmd = "mypy ingenialink examples"
+
+# ----------------------------- Documentation -----------------------------
+[tool.poe.tasks.docs]
+help = "Build documentation"
+cmd = "python -I -m sphinx -b html docs _docs"
+
+# ----------------------------- Install wheel -----------------------------
+[tool.poe.tasks.install-wheel]
+cmd = "pip install --force-reinstall --no-deps --no-index --find-links dist/ ingenialink"
+
+# ----------------------------- Run unit tests -----------------------------
+[tool.poe.tasks.tests]
+cmd = "python -I -m pytest tests"
+
+# ----------------------------- Coverage combine -----------------------------
+[tool.poe.tasks.cov-combine]
+cmd = "python -I -m coverage combine"
+
+# ----------------------------- Coverage report -----------------------------
+[tool.poe.tasks.cov-report]
+cmd = "python -I -m coverage xml"
