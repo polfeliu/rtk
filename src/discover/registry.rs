@@ -2295,6 +2295,28 @@ mod tests {
     }
 
     #[test]
+    fn test_classify_python_m_pip_list() {
+        assert!(matches!(
+            classify_command("python -m pip list"),
+            Classification::Supported {
+                rtk_equivalent: "rtk pip",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_classify_python3_m_pip_install() {
+        assert!(matches!(
+            classify_command("python3 -m pip install requests"),
+            Classification::Supported {
+                rtk_equivalent: "rtk pip",
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn test_rewrite_ruff_check() {
         assert_eq!(
             rewrite_command_no_prefixes("ruff check .", &[]),
@@ -2348,6 +2370,34 @@ mod tests {
             rewrite_command_no_prefixes("uv pip list", &[]),
             Some("rtk pip list".into())
         );
+    }
+
+    #[test]
+    fn test_rewrite_python_m_pip_list() {
+        assert_eq!(
+            rewrite_command_no_prefixes("python -m pip list", &[]),
+            Some("rtk pip list".into())
+        );
+    }
+
+    #[test]
+    fn test_rewrite_python3_m_pip_show() {
+        assert_eq!(
+            rewrite_command_no_prefixes("python3 -m pip show requests", &[]),
+            Some("rtk pip show requests".into())
+        );
+    }
+
+    #[test]
+    fn test_classify_cargo_run_passthrough() {
+        assert!(matches!(
+            classify_command("cargo run -- --help"),
+            Classification::Supported {
+                rtk_equivalent: "rtk cargo",
+                status: RtkStatus::Passthrough,
+                ..
+            }
+        ));
     }
 
     // --- Go tooling ---

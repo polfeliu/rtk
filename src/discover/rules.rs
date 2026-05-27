@@ -44,13 +44,13 @@ pub const RULES: &[RtkRule] = &[
         subcmd_status: &[],
     },
     RtkRule {
-        pattern: r"^cargo\s+(build|test|clippy|check|fmt|install)",
+        pattern: r"^cargo\s+(build|test|clippy|check|fmt|install|run)",
         rtk_cmd: "rtk cargo",
         rewrite_prefixes: &["cargo"],
         category: "Cargo",
         savings_pct: 80.0,
         subcmd_savings: &[("test", 90.0), ("check", 80.0)],
-        subcmd_status: &[("fmt", RtkStatus::Passthrough)],
+        subcmd_status: &[("fmt", RtkStatus::Passthrough), ("run", RtkStatus::Passthrough)],
     },
     RtkRule {
         pattern: r"^pnpm\s+(exec|i|install|list|ls|outdated|run|run-script)",
@@ -462,9 +462,9 @@ pub const RULES: &[RtkRule] = &[
         subcmd_status: &[],
     },
     RtkRule {
-        pattern: r"^(pip3?|uv\s+pip)\s+(list|outdated|install|show)",
+        pattern: r"^(python[0-9.]*\s+-m\s+)?(pip3?|uv\s+pip)\s+(list|outdated|install|show)",
         rtk_cmd: "rtk pip",
-        rewrite_prefixes: &["pip3", "pip", "uv pip"],
+        rewrite_prefixes: &["python3 -m pip", "python -m pip", "pip3", "pip", "uv pip"],
         category: "Python",
         savings_pct: 75.0,
         subcmd_savings: &[("list", 75.0), ("outdated", 80.0)],
