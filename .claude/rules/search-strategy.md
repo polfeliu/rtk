@@ -23,9 +23,7 @@ src/
 │   ├── utils.rs               ← strip_ansi, truncate, execute_command
 │   ├── filter.rs              ← Language-aware code filtering engine
 │   ├── toml_filter.rs         ← TOML DSL filter engine
-│   ├── display_helpers.rs     ← Terminal formatting helpers
-│   └── telemetry.rs           ← Analytics ping
-├── hooks/                     ← Hook system
+│   └── display_helpers.rs     ← Terminal formatting helpers\n├── hooks/                     ← Hook system
 │   ├── init.rs                ← rtk init command
 │   ├── rewrite_cmd.rs         ← rtk rewrite command
 │   ├── hook_cmd.rs            ← Gemini/Copilot hook processors
