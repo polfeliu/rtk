@@ -83,6 +83,22 @@ pub fn run_copilot() -> Result<()> {
     }
 }
 
+/// Extract the `command` field from `tool_input`, whether it is a JSON object
+/// or a JSON-encoded string (VS Code passes the latter).
+fn extract_tool_input_command(v: &Value) -> Option<String> {
+    if let Some(cmd) = v.pointer("/tool_input/command").and_then(|c| c.as_str()) {
+        return Some(cmd.to_string());
+    }
+    if let Some(ti_str) = v.get("tool_input").and_then(|ti| ti.as_str()) {
+        if let Ok(parsed) = serde_json::from_str::<Value>(ti_str) {
+            if let Some(cmd) = parsed.get("command").and_then(|c| c.as_str()) {
+                return Some(cmd.to_string());
+            }
+        }
+    }
+    None
+}
+
 fn detect_format(v: &Value) -> HookFormat {
     // VS Code Copilot Chat / Claude Code: snake_case keys
     if let Some(tool_name) = v.get("tool_name").and_then(|t| t.as_str()) {
@@ -90,14 +106,8 @@ fn detect_format(v: &Value) -> HookFormat {
             tool_name,
             "runTerminalCommand" | "run_in_terminal" | "Bash" | "bash"
         ) {
-            if let Some(cmd) = v
-                .pointer("/tool_input/command")
-                .and_then(|c| c.as_str())
-                .filter(|c| !c.is_empty())
-            {
-                return HookFormat::VsCode {
-                    command: cmd.to_string(),
-                };
+            if let Some(cmd) = extract_tool_input_command(v).filter(|c| !c.is_empty()) {
+                return HookFormat::VsCode { command: cmd };
             }
         }
         return HookFormat::PassThrough;
@@ -574,17 +584,14 @@ fn run_copilot_vscode_inner(
 ) -> Option<String> {
     let v: Value = serde_json::from_str(input).ok()?;
 
-    let cmd = v
-        .pointer("/tool_input/command")
-        .and_then(|c| c.as_str())
-        .filter(|c| !c.is_empty())?;
+    let cmd = extract_tool_input_command(&v).filter(|c| !c.is_empty())?;
 
-    let verdict = permissions::check_command_with_rules(cmd, deny_rules, ask_rules, allow_rules);
+    let verdict = permissions::check_command_with_rules(&cmd, deny_rules, ask_rules, allow_rules);
     if verdict == PermissionVerdict::Deny {
         return None;
     }
 
-    let rewritten = get_rewritten(cmd)?;
+    let rewritten = get_rewritten(&cmd)?;
 
     let mut hook_output = json!({
         "hookEventName": PRE_TOOL_USE_KEY,
@@ -625,6 +632,15 @@ mod tests {
         json!({
             "tool_name": tool,
             "tool_input": { "command": cmd }
+        })
+    }
+
+    /// VS Code sometimes sends tool_input as a JSON-encoded string.
+    fn vscode_input_string(tool: &str, cmd: &str) -> Value {
+        let ti = serde_json::to_string(&json!({ "command": cmd })).unwrap();
+        json!({
+            "tool_name": tool,
+            "tool_input": ti
         })
     }
 
@@ -669,6 +685,22 @@ mod tests {
     fn test_detect_non_bash_is_passthrough() {
         let v = json!({ "tool_name": "editFiles" });
         assert!(matches!(detect_format(&v), HookFormat::PassThrough));
+    }
+
+    #[test]
+    fn test_detect_string_tool_input_run_in_terminal() {
+        match detect_format(&vscode_input_string("run_in_terminal", "git status")) {
+            HookFormat::VsCode { command } => assert_eq!(command, "git status"),
+            _ => panic!("expected VsCode variant"),
+        }
+    }
+
+    #[test]
+    fn test_detect_string_tool_input_bash() {
+        assert!(matches!(
+            detect_format(&vscode_input_string("Bash", "cargo test")),
+            HookFormat::VsCode { .. }
+        ));
     }
 
     #[test]
@@ -1255,5 +1287,22 @@ mod tests {
             .as_str()
             .unwrap()
             .starts_with("rtk "));
+    }
+
+    #[test]
+    fn test_copilot_vscode_string_tool_input() {
+        // VS Code may pass tool_input as a JSON-encoded string instead of an object.
+        let input = json!({
+            "tool_name": "run_in_terminal",
+            "tool_input": "{\"command\":\"git status\"}"
+        })
+        .to_string();
+        let result =
+            run_copilot_vscode_inner(&input, CopilotPermission::Omit, &[], &[], &[]).unwrap();
+        let v: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(
+            v["hookSpecificOutput"]["updatedInput"]["command"],
+            "rtk git status"
+        );
     }
 }
