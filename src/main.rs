@@ -16,7 +16,7 @@ use cmds::js::{
     vitest_cmd,
 };
 use cmds::jvm::{gradlew_cmd, mvn_cmd};
-use cmds::python::{mypy_cmd, pip_cmd, pytest_cmd, ruff_cmd};
+use cmds::python::{mypy_cmd, pip_cmd, poe_cmd, pytest_cmd, ruff_cmd};
 use cmds::ruby::{rake_cmd, rspec_cmd, rubocop_cmd};
 use cmds::rust::{cargo_cmd, runner};
 use cmds::system::{
@@ -678,6 +678,13 @@ enum Commands {
     /// Mypy type checker with grouped error output
     Mypy {
         /// Mypy arguments
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
+    /// Poe task runner — resolves tasks from pyproject.toml and filters each sub-command
+    Poe {
+        /// Poe arguments (task name + optional args)
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -2227,6 +2234,8 @@ fn run_cli() -> Result<i32> {
         Commands::Pytest { args } => pytest_cmd::run(&args, cli.verbose)?,
 
         Commands::Mypy { args } => mypy_cmd::run(&args, cli.verbose)?,
+
+        Commands::Poe { args } => poe_cmd::run(&args, cli.verbose)?,
 
         Commands::Rake { args } => rake_cmd::run(&args, cli.verbose)?,
 
