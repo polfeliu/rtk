@@ -1199,6 +1199,7 @@ const RTK_META_COMMANDS: &[&str] = &[
     "smart",
     "deps",
     "json",
+    "poe",
 ];
 
 fn run_fallback(parse_error: clap::Error) -> Result<i32> {
@@ -2918,7 +2919,7 @@ mod tests {
         // RTK meta-commands should produce parse errors (not fall through to raw execution).
         // Skip "proxy" because it uses trailing_var_arg (accepts any args by design).
         for cmd in RTK_META_COMMANDS {
-            if matches!(*cmd, "proxy" | "run" | "rewrite" | "session") {
+            if matches!(*cmd, "proxy" | "run" | "rewrite" | "session" | "poe") {
                 continue; // these use trailing_var_arg (accept any args by design)
             }
             let result = Cli::try_parse_from(["rtk", cmd, "--nonexistent-flag-xyz"]);
