@@ -655,6 +655,7 @@ fn rewrite_line_range(cmd: &str) -> Option<String> {
 /// contract as user-configured `transparent_prefixes`.
 const BUILTIN_TRANSPARENT_PREFIXES: &[&str] = &[
     "uv run",
+    "poetry run",
     "noglob",
     "command",
     "builtin",
