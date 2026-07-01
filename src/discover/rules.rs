@@ -489,6 +489,15 @@ pub const RULES: &[RtkRule] = &[
         subcmd_status: &[],
     },
     RtkRule {
+        pattern: r"^uv\s+run(?:\s|$)",
+        rtk_cmd: "rtk uv",
+        rewrite_prefixes: &["uv"],
+        category: "Python",
+        savings_pct: 70.0,
+        subcmd_savings: &[],
+        subcmd_status: &[],
+    },
+    RtkRule {
         pattern: r"^go\s+(test|build|vet)",
         rtk_cmd: "rtk go",
         rewrite_prefixes: &["go"],

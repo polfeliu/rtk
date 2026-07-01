@@ -471,7 +471,7 @@ fn collapse_line_continuations(s: &str) -> std::borrow::Cow<'_, str> {
 /// being run, only *how* it's run — e.g. `docker exec mycontainer`,
 /// `direnv exec .`, `poetry run`, or `bundle exec`. Stripping it lets the inner
 /// command match a filter; the prefix is then re-prepended to the rewrite. The
-/// built-in [`BUILTIN_TRANSPARENT_PREFIXES`] (`uv run`, `noglob`, `command`,
+/// built-in [`BUILTIN_TRANSPARENT_PREFIXES`] (`noglob`, `command`,
 /// `builtin`, `exec`, `nocorrect`) are always applied in addition to
 /// user-configured prefixes.
 ///
@@ -653,15 +653,8 @@ fn rewrite_line_range(cmd: &str) -> Option<String> {
 
 /// Built-in transparent wrappers that use the same strip/recurse/re-prepend
 /// contract as user-configured `transparent_prefixes`.
-const BUILTIN_TRANSPARENT_PREFIXES: &[&str] = &[
-    "uv run",
-    "poetry run",
-    "noglob",
-    "command",
-    "builtin",
-    "exec",
-    "nocorrect",
-];
+const BUILTIN_TRANSPARENT_PREFIXES: &[&str] =
+    &["noglob", "command", "builtin", "exec", "nocorrect"];
 
 const MAX_PREFIX_DEPTH: usize = 10;
 
@@ -2339,7 +2332,7 @@ mod tests {
     fn test_rewrite_uv_run_pytest() {
         assert_eq!(
             rewrite_command_no_prefixes("uv run pytest tests/", &[]),
-            Some("uv run rtk pytest tests/".into())
+            Some("rtk uv run pytest tests/".into())
         );
     }
 
@@ -2347,7 +2340,7 @@ mod tests {
     fn test_rewrite_env_uv_run_pytest() {
         assert_eq!(
             rewrite_command_no_prefixes("PYTHONPATH=. uv run pytest tests/", &[]),
-            Some("PYTHONPATH=. uv run rtk pytest tests/".into())
+            Some("PYTHONPATH=. rtk uv run pytest tests/".into())
         );
     }
 
@@ -2355,7 +2348,7 @@ mod tests {
     fn test_rewrite_uv_run_python_m_pytest() {
         assert_eq!(
             rewrite_command_no_prefixes("uv run python -m pytest -q", &[]),
-            Some("uv run rtk pytest -q".into())
+            Some("rtk uv run python -m pytest -q".into())
         );
     }
 
@@ -2363,23 +2356,23 @@ mod tests {
     fn test_rewrite_uv_run_supported_inner_command() {
         assert_eq!(
             rewrite_command_no_prefixes("uv run ruff check .", &[]),
-            Some("uv run rtk ruff check .".into())
+            Some("rtk uv run ruff check .".into())
         );
     }
 
     #[test]
-    fn test_rewrite_uv_run_options_are_not_parsed() {
+    fn test_rewrite_uv_run_options_are_passed_through() {
         assert_eq!(
             rewrite_command_no_prefixes("uv run --unknown pytest tests/", &[]),
-            None
+            Some("rtk uv run --unknown pytest tests/".into())
         );
         assert_eq!(
             rewrite_command_no_prefixes("uv run -m pytest -q", &[]),
-            None
+            Some("rtk uv run -m pytest -q".into())
         );
         assert_eq!(
             rewrite_command_no_prefixes("uv run --module pytest -q", &[]),
-            None
+            Some("rtk uv run --module pytest -q".into())
         );
     }
 
@@ -2405,6 +2398,49 @@ mod tests {
             rewrite_command_no_prefixes("uv pip list", &[]),
             Some("rtk pip list".into())
         );
+    }
+
+    #[test]
+    fn test_classify_uv_run() {
+        let commands = vec![
+            "uv run python script.py",
+            "uv run pytest",
+            "uv run ruff check",
+            "uv run --project backend --extra dev python script.py",
+        ];
+
+        for command in commands {
+            assert!(
+                matches!(
+                    classify_command(command),
+                    Classification::Supported {
+                        rtk_equivalent: "rtk uv",
+                        ..
+                    }
+                ),
+                "Failed for command: {}",
+                command
+            );
+        }
+    }
+
+    #[test]
+    fn test_rewrite_uv_run() {
+        let commands = vec![
+            "uv run python script.py",
+            "uv run pytest",
+            "uv run ruff check",
+            "uv run --project backend --extra dev python script.py",
+        ];
+
+        for command in commands {
+            assert_eq!(
+                rewrite_command_no_prefixes(command, &[]),
+                Some(format!("rtk {command}")),
+                "Failed for command: {}",
+                command
+            );
+        }
     }
 
     // --- Go tooling ---
