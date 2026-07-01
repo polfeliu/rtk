@@ -16,6 +16,7 @@ use cmds::js::{
     vitest_cmd,
 };
 use cmds::jvm::{gradlew_cmd, mvn_cmd};
+use cmds::php::{ecs_cmd, paratest_cmd, pest_cmd, php_cmd, phpstan_cmd, phpunit_cmd, pint_cmd};
 use cmds::python::{mypy_cmd, pip_cmd, poe_cmd, poetry_cmd, pytest_cmd, ruff_cmd, uv_cmd};
 use cmds::ruby::{rake_cmd, rspec_cmd, rubocop_cmd};
 use cmds::rust::{cargo_cmd, runner};
@@ -632,7 +633,7 @@ enum Commands {
 
     /// Read stdin, apply filter, print filtered output (Unix pipe mode)
     Pipe {
-        /// Filter name (cargo-test, pytest, grep, find, git-log, etc.)
+        /// Filter name (cargo-test, pytest, phpunit, phpstan, pint, grep, find, git-log, etc.)
         #[arg(short, long)]
         filter: Option<String>,
 
@@ -689,6 +690,62 @@ enum Commands {
         args: Vec<String>,
     },
 
+    /// poetry run with compact output
+    Poetry {
+        /// poetry arguments (e.g., run pytest, run python script.py)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
+    /// PHP command runner with compact output for artisan and syntax checks
+    Php {
+        /// PHP arguments (e.g., artisan about, -l app/Http/Controller.php)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
+    /// PHPUnit test runner with compact output
+    Phpunit {
+        /// PHPUnit arguments
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
+    /// PHPStan analyzer with compact output
+    Phpstan {
+        /// PHPStan arguments (e.g., analyse src/)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
+    /// Pest test runner with compact output
+    Pest {
+        /// Pest arguments
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
+    /// ParaTest parallel test runner with compact output
+    Paratest {
+        /// ParaTest arguments
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
+    /// EasyCodingStandard (ECS) code style fixer with compact output
+    Ecs {
+        /// ECS arguments (e.g., check src/, --fix)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
+    /// Laravel Pint (PHP-CS-Fixer) code style fixer with compact output
+    Pint {
+        /// Pint arguments (e.g., --test, app/)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
     /// Rake/Rails test with compact Minitest output (Ruby)
     Rake {
         /// Rake arguments (e.g., test, test TEST=path/to/test.rb)
@@ -720,13 +777,6 @@ enum Commands {
     /// uv run with compact output while preserving uv-managed environment semantics
     Uv {
         /// uv arguments (e.g., run pytest, run --project backend python script.py)
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
-
-    /// poetry run with compact output
-    Poetry {
-        /// poetry arguments (e.g., run pytest, run python script.py)
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -2252,6 +2302,22 @@ fn run_cli() -> Result<i32> {
 
         Commands::Poe { args } => poe_cmd::run(&args, cli.verbose)?,
 
+        Commands::Poetry { args } => poetry_cmd::run(&args, cli.verbose)?,
+
+        Commands::Php { args } => php_cmd::run(&args, cli.verbose)?,
+
+        Commands::Phpunit { args } => phpunit_cmd::run(&args, cli.verbose)?,
+
+        Commands::Phpstan { args } => phpstan_cmd::run(&args, cli.verbose)?,
+
+        Commands::Pest { args } => pest_cmd::run(&args, cli.verbose)?,
+
+        Commands::Paratest { args } => paratest_cmd::run(&args, cli.verbose)?,
+
+        Commands::Ecs { args } => ecs_cmd::run(&args, cli.verbose)?,
+
+        Commands::Pint { args } => pint_cmd::run(&args, cli.verbose)?,
+
         Commands::Rake { args } => rake_cmd::run(&args, cli.verbose)?,
 
         Commands::Rubocop { args } => rubocop_cmd::run(&args, cli.verbose)?,
@@ -2261,8 +2327,6 @@ fn run_cli() -> Result<i32> {
         Commands::Pip { args } => pip_cmd::run(&args, cli.verbose)?,
 
         Commands::Uv { args } => uv_cmd::run(&args, cli.verbose)?,
-
-        Commands::Poetry { args } => poetry_cmd::run(&args, cli.verbose)?,
 
         Commands::Go { command } => match command {
             GoCommands::Test { args } => go_cmd::run_test(&args, cli.verbose)?,
@@ -2622,6 +2686,13 @@ fn is_operational_command(cmd: &Commands) -> bool {
             | Commands::Curl { .. }
             | Commands::Ruff { .. }
             | Commands::Pytest { .. }
+            | Commands::Php { .. }
+            | Commands::Phpunit { .. }
+            | Commands::Phpstan { .. }
+            | Commands::Pest { .. }
+            | Commands::Paratest { .. }
+            | Commands::Ecs { .. }
+            | Commands::Pint { .. }
             | Commands::Rake { .. }
             | Commands::Rubocop { .. }
             | Commands::Rspec { .. }
@@ -3009,6 +3080,13 @@ mod tests {
             "golangci-lint",
             "gradlew",
             "mvn",
+            "php",
+            "phpunit",
+            "phpstan",
+            "pest",
+            "paratest",
+            "ecs",
+            "pint",
             "uv",
             "poetry",
         ];
