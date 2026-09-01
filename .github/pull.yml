@@ -1,6 +1,6 @@
 version: "1"
 rules:
-  - base: fork
+  - base: develop
     upstream: rtk-ai/rtk:develop
     mergeMethod: merge
     assignees:
