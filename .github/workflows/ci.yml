@@ -213,21 +213,19 @@ jobs:
       - name: Resolve baseline commit
         id: baseline
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           # The PR base sha is empty outside pull_request; a fork push is
           # scanned relative to where it diverged from develop.
           BASE="${{ github.event.pull_request.base.sha }}"
           if [ -z "$BASE" ]; then
-            git fetch origin develop >/dev/null 2>&1 || true
-            BASE=$(git merge-base HEAD origin/develop 2>/dev/null || true)
+            git fetch --no-tags origin develop
+            BASE=$(git merge-base HEAD FETCH_HEAD)
           fi
+          echo "baseline: $BASE"
           echo "sha=$BASE" >> "$GITHUB_OUTPUT"
       - run: |
-          if [ -n "${{ steps.baseline.outputs.sha }}" ]; then
-            semgrep scan --config .semgrep.yml \
-              --baseline-commit "${{ steps.baseline.outputs.sha }}" --error
-          else
-            semgrep scan --config .semgrep.yml --error
-          fi
+          semgrep scan --config .semgrep.yml \
+            --baseline-commit "${{ steps.baseline.outputs.sha }}" --error
 
   benchmark:
     name: benchmark
