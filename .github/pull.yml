@@ -1,0 +1,7 @@
+version: "1"
+rules:
+  - base: fork
+    upstream: rtk-ai/rtk:develop
+    mergeMethod: merge
+    assignees:
+      - polfeliu
