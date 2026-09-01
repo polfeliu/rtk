@@ -1,6 +1,6 @@
 //! Reads Claude Code session logs from disk and streams their command history.
 
-use crate::hooks::constants::CLAUDE_DIR;
+use crate::hooks::init::resolve_claude_dir;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::fs;
@@ -44,12 +44,8 @@ pub struct ClaudeProvider;
 impl ClaudeProvider {
     /// Get the base directory for Claude Code projects.
     fn projects_dir() -> Result<PathBuf> {
-        let home = dirs::home_dir().context("could not determine home directory")?;
-        Ok(Self::projects_dir_for_home(&home))
-    }
-
-    fn projects_dir_for_home(home: &Path) -> PathBuf {
-        home.join(CLAUDE_DIR).join("projects")
+        let claude_dir = resolve_claude_dir().context("could not determine claude directory")?;
+        Ok(claude_dir.join("projects"))
     }
 
     fn discover_sessions_in_projects_dir(
@@ -121,15 +117,19 @@ impl ClaudeProvider {
 
     /// Encode a filesystem path to Claude Code's directory name format.
     ///
-    /// Claude Code replaces `/`, `.`, `_`, `\`, and any non-ASCII character
-    /// with `-` when computing the project directory slug under `~/.claude/projects/`.
+    /// Claude Code replaces `/`, `.`, `_`, `\`, `:`, ` `, `[`, `]`, and any
+    /// non-ASCII character with `-` when computing the project directory slug
+    /// under `~/.claude/projects/`.
     ///
     /// `/Users/foo/bar`          → `-Users-foo-bar`
     /// `/Users/first.last/bar`   → `-Users-first-last-bar`
     /// `/home/chris/2_project`   → `-home-chris-2-project`
-    /// `C:\Users\foo\bar`        → `C:-Users-foo-bar`
+    /// `C:\Users\foo\bar`        → `C--Users-foo-bar`
     pub fn encode_project_path(path: &str) -> String {
-        const SANITIZED_CHARS: &[char] = &['/', '.', '_', '\\'];
+        // The drive-letter `:` matters on Windows: every cwd carries one, and if
+        // it isn't sanitized the slug (`C:-...`) never matches Claude's real
+        // folder (`C--...`), so `rtk discover` finds zero sessions (#2919).
+        const SANITIZED_CHARS: &[char] = &['/', '.', '_', '\\', ' ', '[', ']', ':'];
 
         path.chars()
             .map(|c| {
@@ -407,10 +407,13 @@ mod tests {
 
     #[test]
     fn test_encode_project_path_windows() {
-        // Windows backslashes are also replaced with '-'
+        // Windows backslashes AND the drive-letter colon are replaced with '-'.
+        // A real `C:\Users\foo\bar` dir lands in ~/.claude/projects/C--Users-foo-bar,
+        // so keeping the colon (C:-...) made `rtk discover` find zero sessions on
+        // Windows (#2919).
         assert_eq!(
             ClaudeProvider::encode_project_path(r"C:\Users\foo\bar"),
-            "C:-Users-foo-bar"
+            "C--Users-foo-bar"
         );
     }
 
@@ -422,9 +425,23 @@ mod tests {
     }
 
     #[test]
+    fn test_encode_path_with_spaces() {
+        // Even if run on Unix, encoding should replace backslashes to match Claude's behavior
+        assert_eq!(
+            ClaudeProvider::encode_project_path(
+                r"/home/user/projects/[QZX-7K42] - Análise Genérica de Exemplo"
+            ),
+            "-home-user-projects--QZX-7K42----An-lise-Gen-rica-de-Exemplo"
+        );
+    }
+
+    #[test]
     fn test_discover_sessions_missing_projects_dir_returns_empty() {
         let temp_home = tempfile::tempdir().unwrap();
-        let missing_projects_dir = temp_home.path().join(CLAUDE_DIR).join("projects");
+        let missing_projects_dir = temp_home
+            .path()
+            .join(crate::hooks::constants::CLAUDE_DIR)
+            .join("projects");
 
         let sessions = ClaudeProvider::discover_sessions_in_projects_dir(
             &missing_projects_dir,
