@@ -4,7 +4,7 @@ use super::constants::{
 };
 use super::init::resolve_claude_dir;
 use crate::core::stream::exec_capture;
-use crate::discover::lexer::split_for_permissions;
+use crate::discover::lexer::{is_word_boundary_whitespace, split_for_permissions};
 use serde_json::Value;
 use std::path::PathBuf;
 
@@ -41,14 +41,24 @@ pub enum Host {
 }
 
 pub fn check_command_for(cmd: &str, host: Host) -> PermissionVerdict {
-    let (deny_rules, ask_rules, allow_rules) = match host {
+    let (deny_rules, ask_rules, allow_rules) = load_rules_for(host);
+    check_command_with_rules(cmd, &deny_rules, &ask_rules, &allow_rules)
+}
+
+/// Load `host`'s deny/ask/allow Bash rules from disk, doing the settings-file I/O
+/// exactly once. Exposed so a caller that checks many commands against the same
+/// host in a loop (e.g. `rtk discover` scanning thousands of transcript commands)
+/// can load once up front and reuse `check_command_with_rules` per command instead
+/// of going through `check_command_for` and re-reading every settings file from
+/// disk on every single call.
+pub(crate) fn load_rules_for(host: Host) -> (Vec<String>, Vec<String>, Vec<String>) {
+    match host {
         Host::Claude => load_permission_rules(),
         Host::Cursor => load_cursor_rules(),
         Host::Gemini => load_gemini_rules(),
         Host::Droid => load_droid_rules(),
         Host::Vibe => (Vec::new(), Vec::new(), Vec::new()),
-    };
-    check_command_with_rules(cmd, &deny_rules, &ask_rules, &allow_rules)
+    }
 }
 
 /// Internal implementation allowing tests to inject rules without file I/O.
@@ -394,8 +404,16 @@ pub(crate) fn extract_bash_pattern(rule: &str) -> &str {
 /// - `* suffix`, `pre * suf` → glob matching where `*` matches any sequence of characters
 /// - `pattern` → exact match or prefix match (cmd must equal pattern or start with `{pattern} `)
 pub(crate) fn command_matches_pattern(cmd: &str, pattern: &str) -> bool {
-    let cmd_norm = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
-    let pattern_norm = pattern.split_whitespace().collect::<Vec<_>>().join(" ");
+    // Shares the lexer's word-boundary definition rather than
+    // str::split_whitespace(), so a bare `\r` in `cmd` never collapses into a space.
+    let normalize = |s: &str| {
+        s.split(is_word_boundary_whitespace)
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let cmd_norm = normalize(cmd);
+    let pattern_norm = normalize(pattern);
     let cmd = cmd_norm.as_str();
     let pattern = pattern_norm.as_str();
 
@@ -987,6 +1005,32 @@ mod tests {
         assert_eq!(
             check_command_with_rules("git status\nrm -rf ~", &[], &[], &allow),
             PermissionVerdict::Default
+        );
+    }
+
+    #[test]
+    fn test_lone_cr_hidden_command_not_auto_allowed() {
+        let allow = vec!["git status".to_string()];
+        assert_eq!(
+            check_command_with_rules("git status\rrm -rf ~", &[], &[], &allow),
+            PermissionVerdict::Default
+        );
+    }
+
+    #[test]
+    fn test_lone_cr_does_not_collapse_to_space_in_pattern_match() {
+        assert!(!command_matches_pattern(
+            "git status\rrm -rf ~",
+            "git status"
+        ));
+    }
+
+    #[test]
+    fn test_lone_cr_segment_still_denied() {
+        let deny = vec!["rm:*".to_string()];
+        assert_eq!(
+            check_command_with_rules("git status\rrm -rf ~", &deny, &[], &[]),
+            PermissionVerdict::Deny
         );
     }
 
