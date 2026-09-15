@@ -1262,6 +1262,15 @@ fn rewrite_compound(
             }
             TokenKind::Shellism if tok.value == "&" => {
                 let seg = cmd[seg_start..tok.offset].trim();
+                // Bash requires a command before `&`, so an empty left segment
+                // means this `&` is not a background operator and the line is
+                // not the bash this tokenizer assumes — PowerShell's call
+                // operator (`& poetry lock`) is the common source. Splitting
+                // there emits a line that is invalid bash and mangles the
+                // PowerShell original, so refuse the whole rewrite.
+                if seg.is_empty() {
+                    return None;
+                }
                 let rewritten = rewrite_segment(seg, excluded, transparent_prefixes)
                     .unwrap_or_else(|| seg.to_string());
                 if rewritten != seg {
@@ -3033,6 +3042,23 @@ mod tests {
         assert_eq!(
             rewrite_command_no_prefixes("cargo test & git status", &[]),
             Some("rtk cargo test & rtk git status".into())
+        );
+    }
+
+    #[test]
+    fn test_rewrite_leading_call_operator_is_refused() {
+        // PowerShell's call operator, not a bash background `&`.
+        assert_eq!(
+            rewrite_command_no_prefixes("& poetry lock --regenerate", &[]),
+            None
+        );
+    }
+
+    #[test]
+    fn test_rewrite_call_operator_after_semicolon_is_refused() {
+        assert_eq!(
+            rewrite_command_no_prefixes("Write-Host \"x\"; & poetry lock --regenerate", &[]),
+            None
         );
     }
 
