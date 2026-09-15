@@ -3,7 +3,7 @@
 
 use super::{mypy_cmd, pytest_cmd, ruff_cmd};
 use crate::core::runner;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::ffi::OsString;
 use std::path::Path;
 use toml::Value;
@@ -139,10 +139,7 @@ sequence = ["ruff-format-check", "ruff-check", "mypy"]
     fn test_resolve_sequence_task() {
         let tasks = sample_tasks();
         let task = tasks.get("lint").unwrap();
-        let seq = task
-            .get("sequence")
-            .and_then(|s| s.as_array())
-            .unwrap();
+        let seq = task.get("sequence").and_then(|s| s.as_array()).unwrap();
         let names: Vec<&str> = seq.iter().map(|v| v.as_str().unwrap()).collect();
         assert_eq!(names, vec!["ruff-format-check", "ruff-check", "mypy"]);
     }
@@ -152,12 +149,7 @@ sequence = ["ruff-format-check", "ruff-check", "mypy"]
         let tasks = sample_tasks();
         let result = run_task("nonexistent", &[], &tasks, 0);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("not found")
-        );
+        assert!(result.unwrap_err().to_string().contains("not found"));
     }
 
     #[test]
@@ -221,10 +213,7 @@ sequence = ["step1", "nonexistent"]
         // Can't run the sequence without executing commands, but we can verify
         // the task structure parses correctly
         let task = tasks.get("pipeline").unwrap();
-        let seq = task
-            .get("sequence")
-            .and_then(|s| s.as_array())
-            .unwrap();
+        let seq = task.get("sequence").and_then(|s| s.as_array()).unwrap();
         assert_eq!(seq.len(), 2);
     }
 
