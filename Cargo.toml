@@ -41,6 +41,10 @@ getrandom = "0.4"
 flate2 = "1.0"
 quick-xml = "0.37"
 which = "8"
+automod = "1"
+# Stamps `git describe` into the binary: a tagged build reports its tag, any
+# other build reports the tag plus its distance and commit.
+git-version = "0.3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

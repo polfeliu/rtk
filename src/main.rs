@@ -63,10 +63,20 @@ pub enum AgentTarget {
     Omp,
 }
 
+/// The version this build reports.
+///
+/// `git describe` gives a tagged build the tag itself and any other build the
+/// tag plus its distance and commit, so a fork build identifies the exact
+/// commit it came from. Falls back to the crate version outside a checkout.
+const VERSION: &str = git_version::git_version!(
+    args = ["--tags", "--always", "--dirty=-modified"],
+    fallback = env!("CARGO_PKG_VERSION")
+);
+
 #[derive(Parser)]
 #[command(
     name = "rtk",
-    version,
+    version = VERSION,
     about = "Rust Token Killer - Minimize LLM token consumption",
     long_about = "A high-performance CLI proxy designed to filter and summarize system outputs before they reach your LLM context."
 )]
@@ -3527,6 +3537,16 @@ mod tests {
             Err(e) => assert_eq!(e.kind(), ErrorKind::DisplayHelp),
             Ok(_) => panic!("Expected DisplayHelp error"),
         }
+    }
+
+    #[test]
+    fn test_version_describes_the_commit_it_was_built_from() {
+        assert!(!VERSION.is_empty());
+        assert_ne!(
+            VERSION,
+            env!("CARGO_PKG_VERSION"),
+            "a build inside a checkout must describe its commit, not the crate version"
+        );
     }
 
     #[test]
